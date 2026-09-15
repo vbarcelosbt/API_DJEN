@@ -1,7 +1,7 @@
 [project]
-name = "template-bluetape"
+name = "api-djen"
 version = "0.1.0"
-description = "Template base para os robos de RPA da Bluetape"
+description = "Robo que pesquisa no DJEN as publicacoes de uma lista de processos"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,8 @@ dependencies = [
     "pipreqs>=0.5.0",
     "python-dotenv>=1.1.1",
     "pytz>=2025.2",
+    "requests>=2.32.0",
+    # Nao e usado pelo robo, mas o classe_objeto_pagina importa o selenium.
     "selenium>=4.35.0",
 ]
 

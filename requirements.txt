@@ -8,6 +8,8 @@ openpyxl>=3.1.5
 pandas>=2.3.2
 python-dotenv>=1.1.1
 pytz>=2025.2
+requests>=2.32.0
+# Nao e usado pelo robo, mas o classe_objeto_pagina importa o selenium.
 selenium>=4.35.0
 
 # Bibliotecas internas (clonar na raiz do projeto, nao instalar por pip):

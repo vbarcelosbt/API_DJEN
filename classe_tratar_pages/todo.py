@@ -1,7 +1,5 @@
 from classe_objeto_pagina.page_objects import Page
-from classe_tratar_pages.acessar import *
-from classe_tratar_pages.realizar import *
+from classe_tratar_pages.pesquisar import PesquisarDjen
 
 class PageRealizar(Page):
-    acessar = Acessar()
-    realizar = Realizar()
+    pesquisar_djen = PesquisarDjen()

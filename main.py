@@ -1,6 +1,7 @@
 from classes_complementares.tratar_email import TratarEmail
+from config import criar_contexto_execucao, ContextoExecucao
 from realizar_tarefa import Tarefas
-from dotenv import load_dotenv
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 import datetime
 import logging
 import pandas as pd
@@ -9,19 +10,49 @@ from Logger.Logger import Logger, LogLevel
 import pytz
 
 
-# Destinatarios padrao dos e-mails de inicio/fim. Podem ser sobrescritos pela
-# variavel LISTA_EMAIL_TI do .env (enderecos separados por virgula).
-LS_ENDERECO_EMAIL_TI_PADRAO = ['email1@example.com', 'email2@example.com']
-
-ARQUIVO_BASE = 'teste.xlsx'
+# Limite de caracteres de uma celula do Excel; o teor de algumas publicacoes passa disso.
+LIMITE_CARACTERES_CELULA = 32767
+SUFIXO_TEXTO_TRUNCADO = ' [TEXTO TRUNCADO]'
 
 
-def get_data() -> pd.DataFrame:
-    df = pd.read_excel(ARQUIVO_BASE, dtype=str)
+def get_data(contexto: ContextoExecucao) -> pd.DataFrame:
+    df = pd.read_excel(contexto.arquivo_base, dtype=str)
+    df = df.dropna(how='all').reset_index(drop=True)
+
+    if contexto.coluna_processo not in df.columns:
+        raise Exception(f'A coluna "{contexto.coluna_processo}" não foi encontrada em "{contexto.arquivo_base}". Colunas disponíveis: {list(df.columns)}.')
+
     return df
 
-def post_data(df:pd.DataFrame) -> None:
-    df.to_excel(ARQUIVO_BASE, index=False)
+def post_data(df_processos: pd.DataFrame, df_publicacoes: pd.DataFrame, dir_resultado: str) -> str:
+    '''
+    Metodo que publica a lista de publicacoes encontradas e o resultado de cada processo da base.
+    :return: str -> caminho da planilha gerada.
+    '''
+
+    data_atual_str = datetime.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime('%d_%m_%Y_%H_%M_%S')
+    arquivo_resultado = os.path.join(dir_resultado, f'publicacoes_djen_{data_atual_str}.xlsx')
+
+    with pd.ExcelWriter(arquivo_resultado, engine='openpyxl') as writer:
+        preparar_para_excel(df_publicacoes).to_excel(writer, sheet_name='publicacoes', index=False)
+        preparar_para_excel(df_processos).to_excel(writer, sheet_name='processos', index=False)
+
+    return arquivo_resultado
+
+def preparar_para_excel(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Metodo que remove caracteres que o Excel nao aceita e trunca textos acima do limite da celula.
+    :return: pd.DataFrame
+    '''
+
+    def tratar_valor(valor):
+        if isinstance(valor, str):
+            valor = ILLEGAL_CHARACTERS_RE.sub('', valor)
+            if len(valor) > LIMITE_CARACTERES_CELULA:
+                valor = valor[:LIMITE_CARACTERES_CELULA - len(SUFIXO_TEXTO_TRUNCADO)] + SUFIXO_TEXTO_TRUNCADO
+        return valor
+
+    return df.map(tratar_valor)
 
 def configurar_logging() -> str:
     '''
@@ -46,16 +77,6 @@ def configurar_logging() -> str:
 
     return arquivo_log
 
-def obter_destinatarios() -> list:
-    '''
-    Metodo que le os destinatarios do .env e usa o padrao quando a variavel nao existe.
-    :return: list -> lista de e-mails.
-    '''
-
-    destinatarios = [email.strip() for email in os.getenv('LISTA_EMAIL_TI', '').split(',') if email.strip()]
-
-    return destinatarios or LS_ENDERECO_EMAIL_TI_PADRAO
-
 def task() -> None:
     '''
     Método que realiza a configuração de execução do rôbo.
@@ -69,13 +90,13 @@ def task() -> None:
 
     log = Logger()
 
-    dotenv_path = os.path.join('.env')
-    load_dotenv(dotenv_path)
+    # Le o .env e valida os criterios de pesquisa do config.py antes de iniciar.
+    contexto = criar_contexto_execucao()
 
-    cliente = os.getenv("NOME_CLIENTE")
-    robo = os.getenv("NOME_ROBO")
+    cliente = contexto.cliente
+    robo = contexto.robo
 
-    ls_endereco_email_ti = obter_destinatarios()
+    ls_endereco_email_ti = contexto.lista_email_ti
 
     # Enviar o email informando que o robô foi iniciado
     assunto = f"INICIO - Robô {robo} - {cliente}"
@@ -85,11 +106,13 @@ def task() -> None:
 
     try:
         # Metodo que obtém a base de execução
-        df = get_data()
+        df = get_data(contexto)
         # Metodo que realiza robo
-        df = Tarefas(df, dir_resultado).realizar_tarefa()
+        resultado = Tarefas(df, dir_resultado, contexto).realizar_tarefa()
+        df_processos = resultado['dados']['processos']
+        df_publicacoes = resultado['dados']['publicacoes']
         # Metodo que publica os resultados
-        post_data(df)
+        arquivo_resultado = post_data(df_processos, df_publicacoes, dir_resultado)
     except Exception as e:
         assunto = f"ERRO AO FINALIZAR A EXECUÇÃO - Robô {robo} - {cliente}"
         mensagem = f'Olá! O robô {robo} do cliente {cliente} finalizou a execução com erro. Detalhe do erro: {e}'
@@ -97,8 +120,14 @@ def task() -> None:
         # e-mail de encerramento precisa ser enviado mesmo com falha.
         log.criarLogPrint(mensagem, LogLevel.WARNING, classe=__name__)
     else:
+        qtd_erros = int((df_processos['RESULTADO'] == 'ERRO').sum())
         assunto = f"FIM - Robô {robo} - {cliente}"
-        mensagem = f'Olá! O robô {robo} do cliente {cliente} finalizou a execução.'
+        mensagem = (
+            f'Olá! O robô {robo} do cliente {cliente} finalizou a execução.\n'
+            f'Processos na base: {len(df_processos)} (com erro: {qtd_erros}).\n'
+            f'Publicações encontradas: {len(df_publicacoes)}.\n'
+            f'Resultado: {arquivo_resultado}'
+        )
         log.criarLogPrint(mensagem, LogLevel.INFO, classe=__name__)
 
     TratarEmail().enviar_email(ls_endereco_email_ti, assunto, mensagem)
