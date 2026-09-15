@@ -1,0 +1,28 @@
+# IDEs
+/.idea/
+/.vscode/
+
+# Ambientes virtuais
+/venv/
+/.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Segredos e configuracao local
+.env
+*.env
+!.env.example
+
+# Bibliotecas internas clonadas na raiz (nao versionar aqui)
+/classes_complementares/
+/classe_objeto_pagina/
+
+# Artefatos de execucao
+/dados_logging/
+/resultado/
+/downloads/
+*.log
+*.xlsx
+!teste.xlsx
